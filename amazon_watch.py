@@ -68,6 +68,9 @@ def home():
     return "Amazon Monitor Running"
 
 if __name__ == "__main__":
-    threading.Thread(target=monitor).start()
+    monitor_thread = threading.Thread(target=monitor)
+    monitor_thread.daemon = True
+    monitor_thread.start()
+
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
