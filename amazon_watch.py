@@ -14,7 +14,7 @@ HEADERS = {
 STATE_FILE = "last_sellers.json"
 
 def telegram_send(msg: str):
-    url = f"https://api.telegram.org/bot{8629112249:AAEe2IIhmu7kHGUMmkJvgCMwsNJ1m_O_Ptw}/sendMessage"
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     requests.post(url, data={"chat_id": CHAT_ID, "text": msg}, timeout=20)
 
 def fetch_offers_page(asin: str) -> str:
