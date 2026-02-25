@@ -40,7 +40,13 @@ def parse_sellers(html):
     return sellers
 
 def monitor():
-    telegram_send("Amazon monitoring started")
+    print("Monitor thread started")
+    try:
+        telegram_send("Amazon monitoring started")
+        print("Startup message sent")
+    except Exception as e:
+        print("Telegram startup error:", e)
+
     prev = {}
 
     while True:
@@ -50,13 +56,13 @@ def monitor():
 
             if current != prev:
                 telegram_send("Seller change detected")
+                print("Seller change alert sent")
                 prev = current
 
         except Exception as e:
-            telegram_send(f"Error: {e}")
+            print("Monitoring error:", e)
 
         time.sleep(300)
-
 @app.route("/")
 def home():
     return "Amazon Monitor Running"
