@@ -20,9 +20,15 @@ STATE_FILE = "last_sellers.json"
 app = Flask(__name__)
 
 def telegram_send(msg):
-    url = "https://api.telegram.org/bot" + str(BOT_TOKEN) + "/sendMessage"
-    requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
-
+    try:
+        url = "https://api.telegram.org/bot" + str(BOT_TOKEN) + "/sendMessage"
+        response = requests.post(url, data={
+            "chat_id": CHAT_ID,
+            "text": msg
+        })
+        print("Telegram response:", response.text)
+    except Exception as e:
+        print("Telegram error:", e)
 def fetch_offers_page():
     url = f"https://www.amazon.in/gp/offer-listing/{ASIN}"
     r = requests.get(url, headers=HEADERS)
