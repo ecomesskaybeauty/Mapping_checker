@@ -47,6 +47,8 @@ def parse_sellers(html):
 
 def monitor():
     print("Monitor thread started")
+    telegram_send("🔥 BOT STARTED SUCCESSFULLY")
+print("Startup message sent")
     try:
         telegram_send("Amazon monitoring started")
         print("Startup message sent")
