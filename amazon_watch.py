@@ -45,7 +45,7 @@ def parse_sellers(html):
             sellers[seller_id] = name
     return sellers
 
-def monitor():
+def main():
     print("Monitor thread started")
     telegram_send("🔥 BOT STARTED SUCCESSFULLY")
 print("Startup message sent")
