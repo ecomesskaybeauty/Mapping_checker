@@ -1,119 +1,82 @@
 import os
 import time
-import threading
-import re
 import requests
+import threading
 from bs4 import BeautifulSoup
 from flask import Flask
+
+app = Flask(__name__)
 
 BOT_TOKEN = os.getenv("8629112249:AAH6MebXra4Fyc9BJuSd8boUItObFVQJY9U")
 CHAT_ID = os.getenv("1250820754")
 
-CHECK_EVERY_SECONDS = 300  # 5 minutes
-
-PRODUCTS = {
-    "White Chocolate Wax 800ml": "B0762QTS6T",
-    "Rica Aloe 800ml": "B00UAFNCS2",
-    "Rica Brazilian Avocado": "B00BH4Y4FA",
-    "Rica Liposoluble White": "B084VQXFQP"
-}
+PRODUCTS = [
+    "https://www.amazon.in/dp/B0762QTS6T",
+    "https://www.amazon.in/dp/B00UAFNCS2",
+    "https://www.amazon.in/dp/B00BH4Y4FA",
+    "https://www.amazon.in/dp/B084VQXFQP"
+]
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0",
-    "Accept-Language": "en-IN,en;q=0.9",
+    "Accept-Language": "en-IN,en;q=0.9"
 }
 
-app = Flask(__name__)
+previous_data = {}
 
-last_data = {}
-
-
-def telegram_send(message):
+def send_telegram(msg):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    try:
-        r = requests.post(url, data={
-            "chat_id": CHAT_ID,
-            "text": message
-        })
-        print("Telegram:", r.text)
-    except Exception as e:
-        print("Telegram error:", e)
+    requests.post(url, data={"chat_id": CHAT_ID, "text": msg})
 
-
-def fetch_product(asin):
-    url = f"https://www.amazon.in/dp/{asin}"
-    r = requests.get(url, headers=HEADERS, timeout=25)
+def fetch_product(url):
+    r = requests.get(url, headers=HEADERS)
     soup = BeautifulSoup(r.text, "html.parser")
 
-    # PRICE
-    price = None
-    text = soup.get_text(" ", strip=True)
-    m = re.search(r"₹\s*([\d,]+)", text)
-    if m:
-        price = float(m.group(1).replace(",", ""))
+    title = soup.find(id="productTitle")
+    price = soup.find("span", class_="a-price-whole")
+    seller = soup.find(id="sellerProfileTriggerId")
 
-    # SELLER
-    seller = None
-    merchant = soup.find(id="merchant-info")
-    if merchant:
-        t = merchant.get_text(" ", strip=True)
-        m2 = re.search(r"Sold by\s+([^\.,]+)", t)
-        if m2:
-            seller = m2.group(1)
+    title = title.get_text(strip=True) if title else "N/A"
+    price = price.get_text(strip=True) if price else "N/A"
+    seller = seller.get_text(strip=True) if seller else "Amazon"
 
-    return price, seller
-
+    return title, price, seller
 
 def monitor():
-    telegram_send("✅ Multi-product monitor started")
+    send_telegram("🔥 Amazon Monitor Started")
 
     while True:
         try:
-            for name, asin in PRODUCTS.items():
-                price, seller = fetch_product(asin)
+            for url in PRODUCTS:
+                title, price, seller = fetch_product(url)
 
-                print(name, price, seller)
+                if url not in previous_data:
+                    previous_data[url] = (price, seller)
+                else:
+                    old_price, old_seller = previous_data[url]
 
-                if name not in last_data:
-                    last_data[name] = {
-                        "price": price,
-                        "seller": seller
-                    }
-                    continue
+                    if price != old_price:
+                        send_telegram(
+                            f"💰 PRICE CHANGE\n{title}\nOld: {old_price}\nNew: {price}"
+                        )
 
-                old_price = last_data[name]["price"]
-                old_seller = last_data[name]["seller"]
+                    if seller != old_seller:
+                        send_telegram(
+                            f"🏪 SELLER CHANGE\n{title}\nOld: {old_seller}\nNew: {seller}"
+                        )
 
-                # PRICE DROP
-                if price and old_price and price < old_price:
-                    telegram_send(
-                        f"📉 PRICE DROP!\n{name}\nOld: ₹{old_price}\nNew: ₹{price}\nSeller: {seller}"
-                    )
+                    previous_data[url] = (price, seller)
 
-                # SELLER CHANGE
-                if seller and old_seller and seller != old_seller:
-                    telegram_send(
-                        f"🛒 SELLER CHANGED!\n{name}\nOld: {old_seller}\nNew: {seller}\nPrice: ₹{price}"
-                    )
-
-                last_data[name]["price"] = price
-                last_data[name]["seller"] = seller
+            time.sleep(300)
 
         except Exception as e:
-            print("Monitor error:", e)
-
-        time.sleep(CHECK_EVERY_SECONDS)
-
+            print("Error:", e)
+            time.sleep(60)
 
 @app.route("/")
 def home():
-    return "Amazon multi monitor running"
-
+    return "Amazon Monitor Running"
 
 if __name__ == "__main__":
-    thread = threading.Thread(target=monitor)
-    thread.daemon = True
-    thread.start()
-
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+    threading.Thread(target=monitor).start()
+    app.run(host="0.0.0.0", port=10000)
