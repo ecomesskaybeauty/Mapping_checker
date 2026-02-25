@@ -1,84 +1,119 @@
 import os
 import time
-import json
 import threading
+import re
 import requests
 from bs4 import BeautifulSoup
 from flask import Flask
 
-ASIN = os.getenv("B084VQXFQP")
-BOT_TOKEN = os.getenv("8629112249:AAEe2IIhmu7kHGUMmkJvgCMwsNJ1m_O_Ptw")
+BOT_TOKEN = os.getenv("8629112249:AAH6MebXra4Fyc9BJuSd8boUItObFVQJY9U")
 CHAT_ID = os.getenv("1250820754")
+
+CHECK_EVERY_SECONDS = 300  # 5 minutes
+
+PRODUCTS = {
+    "White Chocolate Wax 800ml": "B0762QTS6T",
+    "Rica Aloe 800ml": "B00UAFNCS2",
+    "Rica Brazilian Avocado": "B00BH4Y4FA",
+    "Rica Liposoluble White": "B084VQXFQP"
+}
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0",
     "Accept-Language": "en-IN,en;q=0.9",
 }
 
-STATE_FILE = "last_sellers.json"
-
 app = Flask(__name__)
 
-def telegram_send(msg):
+last_data = {}
+
+
+def telegram_send(message):
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     try:
-        url = "https://api.telegram.org/bot" + str(BOT_TOKEN) + "/sendMessage"
-        response = requests.post(url, data={
+        r = requests.post(url, data={
             "chat_id": CHAT_ID,
-            "text": msg
+            "text": message
         })
-        print("Telegram response:", response.text)
+        print("Telegram:", r.text)
     except Exception as e:
         print("Telegram error:", e)
-def fetch_offers_page():
-    url = f"https://www.amazon.in/gp/offer-listing/{ASIN}"
-    r = requests.get(url, headers=HEADERS)
-    return r.text
 
-def parse_sellers(html):
-    soup = BeautifulSoup(html, "html.parser")
-    sellers = {}
-    for a in soup.find_all("a", href=True):
-        href = a["href"]
-        if "seller=" in href:
-            seller_id = href.split("seller=")[1].split("&")[0]
-            name = a.get_text(strip=True)
-            sellers[seller_id] = name
-    return sellers
 
-def main():
-    print("Monitor thread started")
-    telegram_send("🔥 BOT STARTED SUCCESSFULLY")
-print("Startup message sent")
-    try:
-        telegram_send("Amazon monitoring started")
-        print("Startup message sent")
-    except Exception as e:
-        print("Telegram startup error:", e)
+def fetch_product(asin):
+    url = f"https://www.amazon.in/dp/{asin}"
+    r = requests.get(url, headers=HEADERS, timeout=25)
+    soup = BeautifulSoup(r.text, "html.parser")
 
-    prev = {}
+    # PRICE
+    price = None
+    text = soup.get_text(" ", strip=True)
+    m = re.search(r"₹\s*([\d,]+)", text)
+    if m:
+        price = float(m.group(1).replace(",", ""))
+
+    # SELLER
+    seller = None
+    merchant = soup.find(id="merchant-info")
+    if merchant:
+        t = merchant.get_text(" ", strip=True)
+        m2 = re.search(r"Sold by\s+([^\.,]+)", t)
+        if m2:
+            seller = m2.group(1)
+
+    return price, seller
+
+
+def monitor():
+    telegram_send("✅ Multi-product monitor started")
 
     while True:
         try:
-            html = fetch_offers_page()
-            current = parse_sellers(html)
+            for name, asin in PRODUCTS.items():
+                price, seller = fetch_product(asin)
 
-            if current != prev:
-                telegram_send("Seller change detected")
-                print("Seller change alert sent")
-                prev = current
+                print(name, price, seller)
+
+                if name not in last_data:
+                    last_data[name] = {
+                        "price": price,
+                        "seller": seller
+                    }
+                    continue
+
+                old_price = last_data[name]["price"]
+                old_seller = last_data[name]["seller"]
+
+                # PRICE DROP
+                if price and old_price and price < old_price:
+                    telegram_send(
+                        f"📉 PRICE DROP!\n{name}\nOld: ₹{old_price}\nNew: ₹{price}\nSeller: {seller}"
+                    )
+
+                # SELLER CHANGE
+                if seller and old_seller and seller != old_seller:
+                    telegram_send(
+                        f"🛒 SELLER CHANGED!\n{name}\nOld: {old_seller}\nNew: {seller}\nPrice: ₹{price}"
+                    )
+
+                last_data[name]["price"] = price
+                last_data[name]["seller"] = seller
 
         except Exception as e:
-            print("Monitoring error:", e)
+            print("Monitor error:", e)
 
-        time.sleep(300)
+        time.sleep(CHECK_EVERY_SECONDS)
+
+
 @app.route("/")
 def home():
-    return "Amazon Monitor Running"
+    return "Amazon multi monitor running"
+
 
 if __name__ == "__main__":
-    monitor_thread = threading.Thread(target=monitor)
-    monitor_thread.daemon = True
-    monitor_thread.start()
+    thread = threading.Thread(target=monitor)
+    thread.daemon = True
+    thread.start()
 
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
